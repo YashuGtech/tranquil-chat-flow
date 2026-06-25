@@ -90,7 +90,7 @@ export const submitSubscription = createServerFn({ method: "POST" })
       .object({
         sessionId: z.string().uuid(),
         planGtc: z.number().int().positive(),
-        txnHash: z.string().min(4).max(200),
+        txnHash: z.string().trim().min(4).max(200),
         feeGtc: z.number().int().min(1).max(10).optional(),
       })
       .parse(d),
