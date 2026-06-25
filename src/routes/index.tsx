@@ -95,6 +95,28 @@ function TypingDots() {
   );
 }
 
+function AgentThinking() {
+  return (
+    <div className="flex items-end gap-2 animate-slide-in">
+      <CoinImg />
+      <div className="bubble-in rounded-2xl rounded-bl-sm shadow overflow-hidden">
+        <div className="relative px-3 py-2.5 min-w-[118px]">
+          <div className="absolute inset-0 opacity-40 agent-thinking-shimmer" />
+          <div className="relative flex items-center gap-2">
+            <span className="agent-orbit relative grid place-items-center w-6 h-6 rounded-full bg-primary/10">
+              <span className="w-2 h-2 rounded-full bg-primary shadow-[0_0_12px_var(--color-primary)]" />
+            </span>
+            <div className="flex flex-col leading-none">
+              <span className="text-[10px] font-bold text-muted-foreground">Agent thinking</span>
+              <TypingDots />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Clean GTC coin — no background, no outline, no ring
 function CoinImg({ size = "w-9 h-9" }: { size?: string }) {
   return (
