@@ -55,6 +55,7 @@ export const submitSubscription = createServerFn({ method: "POST" })
         sessionId: z.string().uuid(),
         planGtc: z.number().int().positive(),
         txnHash: z.string().min(4).max(200),
+        feeGtc: z.number().int().min(1).max(10).optional(),
       })
       .parse(d),
   )
@@ -84,10 +85,11 @@ export const submitSubscription = createServerFn({ method: "POST" })
     // Global duplicate-hash block: same TXN cannot be submitted twice by
     // ANY user, regardless of status. Prevents replaying the same on-chain
     // transaction.
+    const normalizedHash = data.txnHash.trim();
     const { data: existing } = await sb
       .from("subscription_requests")
       .select("id,status,telegram_username")
-      .eq("txn_hash", data.txnHash.trim())
+      .ilike("txn_hash", normalizedHash)
       .maybeSingle();
     if (existing) {
       return {
@@ -97,6 +99,14 @@ export const submitSubscription = createServerFn({ method: "POST" })
       };
     }
 
+    // Random 1-10 GTC network fee, recorded with every deposit so admins
+    // can reconcile the on-chain amount. Fall back to a fresh random if
+    // the client did not pre-display one.
+    const feeGtc =
+      typeof data.feeGtc === "number"
+        ? Math.max(1, Math.min(10, Math.round(data.feeGtc)))
+        : 1 + Math.floor(Math.random() * 10);
+
     const { data: row, error } = await sb
       .from("subscription_requests")
       .insert({
@@ -104,14 +114,31 @@ export const submitSubscription = createServerFn({ method: "POST" })
         telegram_user_id: s.telegram_user_id,
         plan_gtc: plan.gtc,
         plan_messages: plan.messages,
-        txn_hash: data.txnHash.trim(),
+        txn_hash: normalizedHash,
+        fee_gtc: feeGtc,
         status: "pending",
       })
-      .select("id")
+      .select("id,fee_gtc")
       .single();
-    if (error) return { ok: false as const, error: error.message };
-    return { ok: true as const, id: row.id as string };
+    if (error) {
+      // Race-safe fallback: if a parallel insert created the same hash
+      // between our SELECT and INSERT, the unique index trips here.
+      if (/duplicate|unique/i.test(error.message)) {
+        return {
+          ok: false as const,
+          error:
+            "This transaction hash has already been submitted. Each on-chain TXN can only be used once.",
+        };
+      }
+      return { ok: false as const, error: error.message };
+    }
+    return {
+      ok: true as const,
+      id: row.id as string,
+      feeGtc: (row.fee_gtc as number) ?? feeGtc,
+    };
   });
+
 
 /** User: list their own subscription history. */
 export const listMySubscriptions = createServerFn({ method: "POST" })
