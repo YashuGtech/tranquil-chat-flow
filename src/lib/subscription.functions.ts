@@ -102,6 +102,24 @@ export const submitSubscription = createServerFn({ method: "POST" })
     if (!plan) return { ok: false as const, error: "Invalid plan" };
 
     const sb = getUserSupabase();
+    // Global duplicate-hash block FIRST: same TXN cannot be submitted twice by
+    // ANY user, regardless of status. Prevents replaying the same on-chain
+    // transaction before we even consider saving a request.
+    const txnHash = data.txnHash.trim();
+    const normalizedHash = normalizeTxnHash(txnHash);
+    let duplicateHash = false;
+    try {
+      duplicateHash = await txnHashAlreadySubmitted(sb, normalizedHash);
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Could not verify this TXN hash." };
+    }
+    if (duplicateHash) {
+      return {
+        ok: false as const,
+        error: DUPLICATE_TXN_ERROR,
+      };
+    }
+
     // Block if this user already has a pending request — they must wait
     // until the previous one is approved or rejected before submitting again.
     const { data: pendingForUser } = await sb
@@ -118,24 +136,6 @@ export const submitSubscription = createServerFn({ method: "POST" })
           "You already have a deposit request pending review. Please wait until it is approved or rejected before submitting another.",
       };
     }
-    // Global duplicate-hash block: same TXN cannot be submitted twice by
-    // ANY user, regardless of status. Prevents replaying the same on-chain
-    // transaction.
-    const txnHash = data.txnHash.trim();
-    const normalizedHash = normalizeTxnHash(txnHash);
-    let duplicateHash = false;
-    try {
-      duplicateHash = await txnHashAlreadySubmitted(sb, normalizedHash);
-    } catch (e) {
-      return { ok: false as const, error: e instanceof Error ? e.message : "Could not verify this TXN hash." };
-    }
-    if (duplicateHash) {
-      return {
-        ok: false as const,
-        error: DUPLICATE_TXN_ERROR,
-      };
-    }
-
     // Random 1-10 GTC network fee, recorded with every deposit so admins
     // can reconcile the on-chain amount. Fall back to a fresh random if
     // the client did not pre-display one.
