@@ -2,12 +2,10 @@
 -- Seed default AI keys (Gemma + Nvidia pools).
 -- Safe to re-run (uses ON CONFLICT).
 --
--- NOTE: We intentionally do NOT add a UNIQUE index on
--- subscription_requests.txn_hash, because historical data may
--- already contain duplicate hashes and the user asked us to
--- preserve all existing TXN history. Duplicate-submission
--- protection for NEW requests is enforced at the application
--- layer (see src/lib/subscription.functions.ts -> submitSubscription).
+-- NOTE: TXN replay protection now lives in
+-- migration-deposit-fee-and-unique-hash.sql. It uses a registry/trigger so
+-- historical duplicate rows can remain for audit history while NEW duplicate
+-- TXN hashes are blocked before saving.
 -- =========================================================
 
 -- Make api_key globally unique so re-running this seed is idempotent.
