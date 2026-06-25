@@ -921,12 +921,13 @@ function Index() {
               {messages.map((m, i) => (
                 <MessageBubble key={i} m={m} />
               ))}
-              {sending && (
+              {(sending || pendingChats > 0) && (
                 <div className="flex items-end gap-2 animate-slide-in">
                   <CoinImg />
                   <div className="bubble-in rounded-2xl rounded-bl-sm shadow"><TypingDots /></div>
                 </div>
               )}
+
             </div>
           </div>
 
