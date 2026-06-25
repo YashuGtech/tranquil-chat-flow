@@ -27,6 +27,7 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [confirmedFee, setConfirmedFee] = useState<number | null>(null);
+  const normalizedTxn = useMemo(() => txn.trim().toLowerCase(), [txn]);
 
   // Recompute random fee whenever the user picks/changes a plan so the
   // "Send exactly X GTC" amount is freshly randomised each attempt.
@@ -44,7 +45,7 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
   );
 
   async function submit() {
-    if (!plan || !txn.trim()) return;
+    if (!plan || !normalizedTxn || busy || done) return;
     setBusy(true);
     setErr(null);
     try {
@@ -225,13 +226,18 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
               </label>
               <input
                 value={txn}
-                onChange={(e) => setTxn(e.target.value)}
+                onChange={(e) => {
+                  setTxn(e.target.value);
+                  if (err) setErr(null);
+                }}
                 placeholder="0x…"
                 autoCapitalize="none"
+                autoComplete="off"
+                spellCheck={false}
                 className="mt-1 w-full h-11 rounded-xl bg-input border border-border px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <p className="mt-1 text-[10px] text-muted-foreground">
-                Each TXN hash can only be submitted once.
+                The database checks this TXN before saving. If it already exists, the request will not be submitted.
               </p>
             </div>
 
@@ -243,7 +249,7 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
 
             <button
               onClick={submit}
-              disabled={busy || !txn.trim()}
+              disabled={busy || done || !normalizedTxn}
               className="w-full h-12 rounded-xl font-bold text-primary-foreground shadow-lg disabled:opacity-50"
               style={{ background: "var(--gradient-blue)", boxShadow: "var(--shadow-blue)" }}
             >

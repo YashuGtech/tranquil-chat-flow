@@ -12,6 +12,42 @@ export const PLANS = [
   { gtc: 10000, messages: 200 },
 ] as const;
 
+const DUPLICATE_TXN_ERROR =
+  "This transaction hash has already been submitted. Each on-chain TXN can only be used once.";
+
+function normalizeTxnHash(hash: string) {
+  return hash.trim().toLowerCase();
+}
+
+async function txnHashAlreadySubmitted(
+  sb: ReturnType<typeof getUserSupabase>,
+  normalizedHash: string,
+  exceptId?: string,
+) {
+  // Do not use maybeSingle(): if legacy duplicate rows already exist,
+  // Supabase returns an error instead of data and the duplicate check is
+  // accidentally bypassed. Fetch a small list and normalize locally.
+  const escapedHash = normalizedHash.replace(/[\\%_]/g, "\\$&");
+  const { data, error } = await sb
+    .from("subscription_requests")
+    .select("id,txn_hash,status,telegram_username")
+    // Contains search catches legacy rows saved with accidental spaces;
+    // the local normalizeTxnHash comparison below keeps it exact.
+    .ilike("txn_hash", `%${escapedHash}%`)
+    .limit(25);
+  if (error) {
+    console.warn("[subscription] duplicate TXN lookup failed", error.message);
+    throw new Error("Could not verify this TXN hash right now. Please try again in a moment.");
+  }
+  return ((data ?? []) as Array<{ id?: string; txn_hash?: string | null }>).some(
+    (row) => row.id !== exceptId && normalizeTxnHash(row.txn_hash ?? "") === normalizedHash,
+  );
+}
+
+function isDuplicateTxnDbError(message = "") {
+  return /duplicate|unique|already been submitted|subscription_txn_hash/i.test(message);
+}
+
 async function getSession(sessionId: string) {
   const sb = getUserSupabase();
   const { data } = await sb
@@ -54,7 +90,7 @@ export const submitSubscription = createServerFn({ method: "POST" })
       .object({
         sessionId: z.string().uuid(),
         planGtc: z.number().int().positive(),
-        txnHash: z.string().min(4).max(200),
+        txnHash: z.string().trim().min(4).max(200),
         feeGtc: z.number().int().min(1).max(10).optional(),
       })
       .parse(d),
@@ -66,6 +102,24 @@ export const submitSubscription = createServerFn({ method: "POST" })
     if (!plan) return { ok: false as const, error: "Invalid plan" };
 
     const sb = getUserSupabase();
+    // Global duplicate-hash block FIRST: same TXN cannot be submitted twice by
+    // ANY user, regardless of status. Prevents replaying the same on-chain
+    // transaction before we even consider saving a request.
+    const txnHash = data.txnHash.trim();
+    const normalizedHash = normalizeTxnHash(txnHash);
+    let duplicateHash = false;
+    try {
+      duplicateHash = await txnHashAlreadySubmitted(sb, normalizedHash);
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Could not verify this TXN hash." };
+    }
+    if (duplicateHash) {
+      return {
+        ok: false as const,
+        error: DUPLICATE_TXN_ERROR,
+      };
+    }
+
     // Block if this user already has a pending request — they must wait
     // until the previous one is approved or rejected before submitting again.
     const { data: pendingForUser } = await sb
@@ -82,23 +136,6 @@ export const submitSubscription = createServerFn({ method: "POST" })
           "You already have a deposit request pending review. Please wait until it is approved or rejected before submitting another.",
       };
     }
-    // Global duplicate-hash block: same TXN cannot be submitted twice by
-    // ANY user, regardless of status. Prevents replaying the same on-chain
-    // transaction.
-    const normalizedHash = data.txnHash.trim();
-    const { data: existing } = await sb
-      .from("subscription_requests")
-      .select("id,status,telegram_username")
-      .ilike("txn_hash", normalizedHash)
-      .maybeSingle();
-    if (existing) {
-      return {
-        ok: false as const,
-        error:
-          "This transaction hash has already been submitted. Each on-chain TXN can only be used once.",
-      };
-    }
-
     // Random 1-10 GTC network fee, recorded with every deposit so admins
     // can reconcile the on-chain amount. Fall back to a fresh random if
     // the client did not pre-display one.
@@ -114,7 +151,7 @@ export const submitSubscription = createServerFn({ method: "POST" })
         telegram_user_id: s.telegram_user_id,
         plan_gtc: plan.gtc,
         plan_messages: plan.messages,
-        txn_hash: normalizedHash,
+        txn_hash: txnHash,
         fee_gtc: feeGtc,
         status: "pending",
       })
@@ -122,12 +159,11 @@ export const submitSubscription = createServerFn({ method: "POST" })
       .single();
     if (error) {
       // Race-safe fallback: if a parallel insert created the same hash
-      // between our SELECT and INSERT, the unique index trips here.
-      if (/duplicate|unique/i.test(error.message)) {
+      // between our SELECT and INSERT, the DB registry/trigger trips here.
+      if (isDuplicateTxnDbError(error.message)) {
         return {
           ok: false as const,
-          error:
-            "This transaction hash has already been submitted. Each on-chain TXN can only be used once.",
+          error: DUPLICATE_TXN_ERROR,
         };
       }
       return { ok: false as const, error: error.message };
@@ -211,6 +247,21 @@ export const adminApproveSubscription = createServerFn({ method: "POST" })
     if (!req) return { ok: false as const, error: "Not found" };
     if (req.status !== "pending") {
       return { ok: false as const, error: `Already ${req.status}` };
+    }
+
+    const reqHash = normalizeTxnHash(String(req.txn_hash ?? ""));
+    let duplicateHash = false;
+    try {
+      duplicateHash = !!reqHash && (await txnHashAlreadySubmitted(sb, reqHash, data.id));
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Could not verify this TXN hash." };
+    }
+    if (duplicateHash) {
+      return {
+        ok: false as const,
+        error:
+          "This TXN hash is already attached to another deposit request. Reject the duplicate instead of approving it.",
+      };
     }
 
     // Atomically flip pending → approved FIRST. Only credit if this call won

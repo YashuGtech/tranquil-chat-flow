@@ -589,7 +589,6 @@ export const Route = createFileRoute("/api/chat")({
 
         const attempts: Attempt[] = [];
         const picked = await pickAvailableKey();
-        let busyNotice: string | null = null;
         if (picked.picked) {
           const k = picked.picked;
           attempts.push({
@@ -601,10 +600,6 @@ export const Route = createFileRoute("/api/chat")({
             pickedKeyId: k.key.id,
             envLabel: null,
           });
-          if (picked.waited) {
-            busyNotice =
-              "(All AI workers were busy — your reply was queued briefly until one was free.)";
-          }
         }
 
         for (const c of buildAiCandidatePool()) {

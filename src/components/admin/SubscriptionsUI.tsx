@@ -98,6 +98,11 @@ export function SubscriptionsUI({ sessionId }: { sessionId: string }) {
           String(r.telegram_user_id ?? "").includes(q) ||
           r.txn_hash.toLowerCase().includes(q),
     );
+  const txnCounts = rows.reduce((acc, r) => {
+    const h = r.txn_hash.trim().toLowerCase();
+    if (h) acc.set(h, (acc.get(h) ?? 0) + 1);
+    return acc;
+  }, new Map<string, number>());
 
   return (
     <div className="space-y-5">
@@ -160,8 +165,13 @@ export function SubscriptionsUI({ sessionId }: { sessionId: string }) {
             <Row
               key={r.id}
               row={r}
+              duplicateTxn={(txnCounts.get(r.txn_hash.trim().toLowerCase()) ?? 0) > 1}
               busy={busyId === r.id}
-              onApprove={r.status === "pending" ? () => approve(r.id) : undefined}
+              onApprove={
+                r.status === "pending" && (txnCounts.get(r.txn_hash.trim().toLowerCase()) ?? 0) <= 1
+                  ? () => approve(r.id)
+                  : undefined
+              }
               onReject={
                 r.status === "pending"
                   ? () => {
@@ -263,11 +273,13 @@ function StatCard({
 
 function Row({
   row,
+  duplicateTxn,
   busy,
   onApprove,
   onReject,
 }: {
   row: SubRow;
+  duplicateTxn?: boolean;
   busy?: boolean;
   onApprove?: () => void;
   onReject?: () => void;
@@ -307,6 +319,11 @@ function Row({
       >
         TXN: {row.txn_hash} ↗
       </a>
+      {duplicateTxn && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] font-bold text-destructive">
+          Duplicate TXN hash found — do not approve another request with this same hash.
+        </div>
+      )}
       <div className="text-[11px]">
         Deposit ledger:{" "}
         {matched ? (

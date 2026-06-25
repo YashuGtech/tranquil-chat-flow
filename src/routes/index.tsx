@@ -95,6 +95,28 @@ function TypingDots() {
   );
 }
 
+function AgentThinking() {
+  return (
+    <div className="flex items-end gap-2 animate-slide-in">
+      <CoinImg />
+      <div className="bubble-in rounded-2xl rounded-bl-sm shadow overflow-hidden">
+        <div className="relative px-3 py-2.5 min-w-[118px]">
+          <div className="absolute inset-0 opacity-40 agent-thinking-shimmer" />
+          <div className="relative flex items-center gap-2">
+            <span className="agent-orbit relative grid place-items-center w-6 h-6 rounded-full bg-primary/10">
+              <span className="w-2 h-2 rounded-full bg-primary shadow-[0_0_12px_var(--color-primary)]" />
+            </span>
+            <div className="flex flex-col leading-none">
+              <span className="text-[10px] font-bold text-muted-foreground">Agent thinking</span>
+              <TypingDots />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Clean GTC coin — no background, no outline, no ring
 function CoinImg({ size = "w-9 h-9" }: { size?: string }) {
   return (
@@ -142,9 +164,10 @@ function Index() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  // Counter of in-flight text chat requests (incl. silent retries) so the
-  // user can keep typing/sending while previous turns are still cooking.
+  // Single in-flight text chat request. While it retries silently, the user
+  // message stays on screen and the agent thinking animation remains open.
   const [pendingChats, setPendingChats] = useState(0);
+  const textChatLockedRef = useRef(false);
 
   const [showBurst, setShowBurst] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -418,7 +441,7 @@ function Index() {
   }
 
   async function sendPhotoMessage() {
-    if (!session || !pendingPhoto || sending) return;
+    if (!session || !pendingPhoto || sending || pendingChats > 0 || textChatLockedRef.current) return;
     setSending(true);
     try {
       const dataUrl = await fileToDataUrl(pendingPhoto);
@@ -469,6 +492,7 @@ function Index() {
 
   async function send() {
     if (!session) return;
+    if (sending || pendingChats > 0 || textChatLockedRef.current) return;
     if (pendingPhoto) return sendPhotoMessage();
     if (!input.trim()) return;
     if (input.trim().length > 4000) {
@@ -480,20 +504,20 @@ function Index() {
     }
     const userMsg: Msg = { role: "user", content: input.trim(), t: Date.now() };
     // Snapshot the conversation that will be sent BEFORE clearing input,
-    // so concurrent sends don't race on a moving `messages` array.
+    // so the held request keeps the exact user message while it retries.
     const convoForApi = [...messages, userMsg]
       .slice(-30)
       .map(({ role, content }) => ({ role, content }));
     setMessages((m) => [...m, userMsg]);
     setInput("");
-    setPendingChats((n) => n + 1);
+    textChatLockedRef.current = true;
+    setPendingChats(1);
     void saveFn({ data: { sessionId: session.id, role: "user", content: userMsg.content } });
 
     // Silent retry loop: if every AI worker is busy, the server returns
     // { retry: true } instead of an error. We keep the typing bubble up
-    // and re-poll until we get a real reply (or a hard error). The user
-    // can keep typing & sending more messages in the meantime — each one
-    // gets its own pending counter slot.
+    // and re-poll until we get a real reply (or a hard error). The input is
+    // locked so the user cannot send another message before the AI replies.
     let attemptDelay = 0;
     let hardError = false;
     try {
@@ -555,8 +579,9 @@ function Index() {
         break;
       }
     } finally {
-      setPendingChats((n) => Math.max(0, n - 1));
-      // `sending` is preserved only for the photo flow; we never block on it here.
+      textChatLockedRef.current = false;
+      setPendingChats(0);
+      // `sending` is preserved only for the photo flow.
       if (hardError) void 0;
     }
   }
@@ -770,10 +795,12 @@ function Index() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask me anything..."
+                disabled={sending || pendingChats > 0}
                 className="w-full h-14 rounded-full bg-input/60 border border-primary/30 pl-12 pr-16 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <button
                 type="submit"
+                disabled={sending || pendingChats > 0 || !input.trim()}
                 className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full grid place-items-center shadow-lg active:scale-95 transition-transform"
                 style={{ background: "var(--gradient-blue)", boxShadow: "var(--shadow-blue)" }}
                 aria-label="Send"
@@ -921,12 +948,7 @@ function Index() {
               {messages.map((m, i) => (
                 <MessageBubble key={i} m={m} />
               ))}
-              {(sending || pendingChats > 0) && (
-                <div className="flex items-end gap-2 animate-slide-in">
-                  <CoinImg />
-                  <div className="bubble-in rounded-2xl rounded-bl-sm shadow"><TypingDots /></div>
-                </div>
-              )}
+              {(sending || pendingChats > 0) && <AgentThinking />}
 
             </div>
           </div>
@@ -965,12 +987,14 @@ function Index() {
                     type="file"
                     accept="image/*"
                     onChange={pickPhoto}
+                    disabled={sending || pendingChats > 0}
                     className="hidden"
                   />
                 </label>
                 <button
                   type="button"
                   onClick={() => setShowTicket(true)}
+                  disabled={sending || pendingChats > 0}
                   className="h-12 w-12 grid place-items-center rounded-2xl bg-[#fff3db] border border-[#ffe3a8] shadow-sm shrink-0 active:scale-95 transition-transform overflow-hidden"
                   aria-label="Raise a ticket to admin"
                   title="Raise a ticket"
@@ -982,6 +1006,7 @@ function Index() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
+                      if (sending || pendingChats > 0) return;
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         send();
@@ -989,16 +1014,20 @@ function Index() {
                     }}
                     rows={1}
                     placeholder={
+                      sending || pendingChats > 0
+                        ? "Agent is thinking…"
+                        :
                       pendingPhoto
                         ? "Describe the issue (optional)…"
                         : "Ask about GTC, mining, presale, or your account…"
                     }
+                    disabled={sending || pendingChats > 0}
                     className="w-full resize-none max-h-32 min-h-[48px] rounded-2xl bg-input border border-border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
                 <button
                   type="submit"
-                  disabled={(sending && pendingPhoto != null) || (!pendingPhoto && !input.trim())}
+                  disabled={sending || pendingChats > 0 || (!pendingPhoto && !input.trim())}
                   className="h-12 w-12 grid place-items-center rounded-2xl bg-[#e4f9e6] border border-[#bff0c5] shadow-sm disabled:opacity-50 transition-transform active:scale-[.95] shrink-0 overflow-hidden"
                   aria-label="Send"
                   title="Send"
