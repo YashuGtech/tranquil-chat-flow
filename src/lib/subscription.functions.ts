@@ -12,6 +12,39 @@ export const PLANS = [
   { gtc: 10000, messages: 200 },
 ] as const;
 
+const DUPLICATE_TXN_ERROR =
+  "This transaction hash has already been submitted. Each on-chain TXN can only be used once.";
+
+function normalizeTxnHash(hash: string) {
+  return hash.trim().toLowerCase();
+}
+
+async function txnHashAlreadySubmitted(
+  sb: ReturnType<typeof getUserSupabase>,
+  normalizedHash: string,
+  exceptId?: string,
+) {
+  // Do not use maybeSingle(): if legacy duplicate rows already exist,
+  // Supabase returns an error instead of data and the duplicate check is
+  // accidentally bypassed. Fetch a small list and normalize locally.
+  const { data, error } = await sb
+    .from("subscription_requests")
+    .select("id,txn_hash,status,telegram_username")
+    .ilike("txn_hash", normalizedHash)
+    .limit(25);
+  if (error) {
+    console.warn("[subscription] duplicate TXN lookup failed", error.message);
+    return false;
+  }
+  return ((data ?? []) as Array<{ id?: string; txn_hash?: string | null }>).some(
+    (row) => row.id !== exceptId && normalizeTxnHash(row.txn_hash ?? "") === normalizedHash,
+  );
+}
+
+function isDuplicateTxnDbError(message = "") {
+  return /duplicate|unique|already been submitted|subscription_txn_hash/i.test(message);
+}
+
 async function getSession(sessionId: string) {
   const sb = getUserSupabase();
   const { data } = await sb
@@ -85,17 +118,12 @@ export const submitSubscription = createServerFn({ method: "POST" })
     // Global duplicate-hash block: same TXN cannot be submitted twice by
     // ANY user, regardless of status. Prevents replaying the same on-chain
     // transaction.
-    const normalizedHash = data.txnHash.trim();
-    const { data: existing } = await sb
-      .from("subscription_requests")
-      .select("id,status,telegram_username")
-      .ilike("txn_hash", normalizedHash)
-      .maybeSingle();
-    if (existing) {
+    const txnHash = data.txnHash.trim();
+    const normalizedHash = normalizeTxnHash(txnHash);
+    if (await txnHashAlreadySubmitted(sb, normalizedHash)) {
       return {
         ok: false as const,
-        error:
-          "This transaction hash has already been submitted. Each on-chain TXN can only be used once.",
+        error: DUPLICATE_TXN_ERROR,
       };
     }
 
@@ -114,7 +142,7 @@ export const submitSubscription = createServerFn({ method: "POST" })
         telegram_user_id: s.telegram_user_id,
         plan_gtc: plan.gtc,
         plan_messages: plan.messages,
-        txn_hash: normalizedHash,
+        txn_hash: txnHash,
         fee_gtc: feeGtc,
         status: "pending",
       })
@@ -122,12 +150,11 @@ export const submitSubscription = createServerFn({ method: "POST" })
       .single();
     if (error) {
       // Race-safe fallback: if a parallel insert created the same hash
-      // between our SELECT and INSERT, the unique index trips here.
-      if (/duplicate|unique/i.test(error.message)) {
+      // between our SELECT and INSERT, the DB registry/trigger trips here.
+      if (isDuplicateTxnDbError(error.message)) {
         return {
           ok: false as const,
-          error:
-            "This transaction hash has already been submitted. Each on-chain TXN can only be used once.",
+          error: DUPLICATE_TXN_ERROR,
         };
       }
       return { ok: false as const, error: error.message };
@@ -211,6 +238,15 @@ export const adminApproveSubscription = createServerFn({ method: "POST" })
     if (!req) return { ok: false as const, error: "Not found" };
     if (req.status !== "pending") {
       return { ok: false as const, error: `Already ${req.status}` };
+    }
+
+    const reqHash = normalizeTxnHash(String(req.txn_hash ?? ""));
+    if (reqHash && (await txnHashAlreadySubmitted(sb, reqHash, data.id))) {
+      return {
+        ok: false as const,
+        error:
+          "This TXN hash is already attached to another deposit request. Reject the duplicate instead of approving it.",
+      };
     }
 
     // Atomically flip pending → approved FIRST. Only credit if this call won
