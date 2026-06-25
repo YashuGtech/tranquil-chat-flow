@@ -27,10 +27,13 @@ async function txnHashAlreadySubmitted(
   // Do not use maybeSingle(): if legacy duplicate rows already exist,
   // Supabase returns an error instead of data and the duplicate check is
   // accidentally bypassed. Fetch a small list and normalize locally.
+  const escapedHash = normalizedHash.replace(/[\\%_]/g, "\\$&");
   const { data, error } = await sb
     .from("subscription_requests")
     .select("id,txn_hash,status,telegram_username")
-    .ilike("txn_hash", normalizedHash.replace(/[\\%_]/g, "\\$&"))
+    // Contains search catches legacy rows saved with accidental spaces;
+    // the local normalizeTxnHash comparison below keeps it exact.
+    .ilike("txn_hash", `%${escapedHash}%`)
     .limit(25);
   if (error) {
     console.warn("[subscription] duplicate TXN lookup failed", error.message);
