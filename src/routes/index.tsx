@@ -142,6 +142,10 @@ function Index() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // Counter of in-flight text chat requests (incl. silent retries) so the
+  // user can keep typing/sending while previous turns are still cooking.
+  const [pendingChats, setPendingChats] = useState(0);
+
   const [showBurst, setShowBurst] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("home");
