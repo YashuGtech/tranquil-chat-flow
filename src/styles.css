@@ -179,9 +179,22 @@
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+@keyframes agentOrbitPulse {
+  0%, 100% { transform: scale(.9); box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-primary) 34%, transparent); }
+  50% { transform: scale(1.06); box-shadow: 0 0 0 8px transparent; }
+}
+@keyframes agentThinkingShimmer {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(160%); }
+}
 
 .animate-slide-in { animation: slideIn .25s ease-out both; }
 .animate-float    { animation: float 6s ease-in-out infinite; }
+.agent-orbit { animation: agentOrbitPulse 1.55s ease-in-out infinite; }
+.agent-thinking-shimmer {
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--color-primary) 18%, transparent), transparent);
+  animation: agentThinkingShimmer 1.8s ease-in-out infinite;
+}
 
 .gtc-coin-3d {
   width: 96px; height: 96px; border-radius: 50%;
