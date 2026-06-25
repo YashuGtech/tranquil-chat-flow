@@ -441,7 +441,7 @@ function Index() {
   }
 
   async function sendPhotoMessage() {
-    if (!session || !pendingPhoto || sending) return;
+    if (!session || !pendingPhoto || sending || pendingChats > 0 || textChatLockedRef.current) return;
     setSending(true);
     try {
       const dataUrl = await fileToDataUrl(pendingPhoto);
@@ -492,6 +492,7 @@ function Index() {
 
   async function send() {
     if (!session) return;
+    if (sending || pendingChats > 0 || textChatLockedRef.current) return;
     if (pendingPhoto) return sendPhotoMessage();
     if (!input.trim()) return;
     if (input.trim().length > 4000) {
@@ -509,14 +510,14 @@ function Index() {
       .map(({ role, content }) => ({ role, content }));
     setMessages((m) => [...m, userMsg]);
     setInput("");
-    setPendingChats((n) => n + 1);
+    textChatLockedRef.current = true;
+    setPendingChats(1);
     void saveFn({ data: { sessionId: session.id, role: "user", content: userMsg.content } });
 
     // Silent retry loop: if every AI worker is busy, the server returns
     // { retry: true } instead of an error. We keep the typing bubble up
-    // and re-poll until we get a real reply (or a hard error). The user
-    // can keep typing & sending more messages in the meantime — each one
-    // gets its own pending counter slot.
+    // and re-poll until we get a real reply (or a hard error). The input is
+    // locked so the user cannot send another message before the AI replies.
     let attemptDelay = 0;
     let hardError = false;
     try {
@@ -578,8 +579,9 @@ function Index() {
         break;
       }
     } finally {
-      setPendingChats((n) => Math.max(0, n - 1));
-      // `sending` is preserved only for the photo flow; we never block on it here.
+      textChatLockedRef.current = false;
+      setPendingChats(0);
+      // `sending` is preserved only for the photo flow.
       if (hardError) void 0;
     }
   }
