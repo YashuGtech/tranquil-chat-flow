@@ -164,9 +164,10 @@ function Index() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  // Counter of in-flight text chat requests (incl. silent retries) so the
-  // user can keep typing/sending while previous turns are still cooking.
+  // Single in-flight text chat request. While it retries silently, the user
+  // message stays on screen and the agent thinking animation remains open.
   const [pendingChats, setPendingChats] = useState(0);
+  const textChatLockedRef = useRef(false);
 
   const [showBurst, setShowBurst] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
