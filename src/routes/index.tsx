@@ -468,7 +468,7 @@ function Index() {
   }
 
   async function send() {
-    if (!session || sending) return;
+    if (!session) return;
     if (pendingPhoto) return sendPhotoMessage();
     if (!input.trim()) return;
     if (input.trim().length > 4000) {
@@ -479,36 +479,69 @@ function Index() {
       return;
     }
     const userMsg: Msg = { role: "user", content: input.trim(), t: Date.now() };
+    // Snapshot the conversation that will be sent BEFORE clearing input,
+    // so concurrent sends don't race on a moving `messages` array.
+    const convoForApi = [...messages, userMsg]
+      .slice(-30)
+      .map(({ role, content }) => ({ role, content }));
     setMessages((m) => [...m, userMsg]);
     setInput("");
-    setSending(true);
+    setPendingChats((n) => n + 1);
     void saveFn({ data: { sessionId: session.id, role: "user", content: userMsg.content } });
 
+    // Silent retry loop: if every AI worker is busy, the server returns
+    // { retry: true } instead of an error. We keep the typing bubble up
+    // and re-poll until we get a real reply (or a hard error). The user
+    // can keep typing & sending more messages in the meantime — each one
+    // gets its own pending counter slot.
+    let attemptDelay = 0;
+    let hardError = false;
     try {
-      const r = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: session.id,
-          messages: [...messages, userMsg].slice(-30).map(({ role, content }) => ({ role, content })),
-        }),
-      });
-      const data = await r.json();
-      if (data?.quota) setQuota(data.quota);
-      if (!r.ok) {
-        if (data?.limit_reached) {
-          setMessages((m) => [
-            ...m,
-            { role: "assistant", content: data.error, t: Date.now() },
-          ]);
-          setShowSubscribe(true);
-        } else {
-          setMessages((m) => [
-            ...m,
-            { role: "assistant", content: `⚠️ ${data.error ?? "Error"}`, t: Date.now() },
-          ]);
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (attemptDelay > 0) {
+          await new Promise((res) => setTimeout(res, attemptDelay));
         }
-      } else {
+        let r: Response;
+        try {
+          r = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: session.id, messages: convoForApi }),
+          });
+        } catch {
+          // Network blip — back off and try again silently. Don't surface
+          // anything to the user; the thinking bubble stays.
+          attemptDelay = 5000;
+          continue;
+        }
+        const data = await r.json().catch(() => ({} as any));
+        if (data?.quota) setQuota(data.quota);
+
+        if (!r.ok) {
+          if (data?.limit_reached) {
+            setMessages((m) => [
+              ...m,
+              { role: "assistant", content: data.error, t: Date.now() },
+            ]);
+            setShowSubscribe(true);
+          } else {
+            setMessages((m) => [
+              ...m,
+              { role: "assistant", content: `⚠️ ${data.error ?? "Error"}`, t: Date.now() },
+            ]);
+          }
+          hardError = true;
+          break;
+        }
+
+        if (data?.retry) {
+          // All workers busy — wait the server-suggested cool-off and
+          // try again WITHOUT telling the user. Bubble stays visible.
+          attemptDelay = Math.max(1500, Number(data.retry_after_ms) || 4000);
+          continue;
+        }
+
         const reply = ((data.reply as string) ?? "").trim();
         const shown = reply || "⚠️ Empty response. Please try again.";
         setMessages((m) => [...m, { role: "assistant", content: shown, t: Date.now() }]);
@@ -519,17 +552,15 @@ function Index() {
           setShowBurst(true);
           setTimeout(() => setShowBurst(false), 2200);
         }
+        break;
       }
-
-    } catch {
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: "Network error. Please try again.", t: Date.now() },
-      ]);
     } finally {
-      setSending(false);
+      setPendingChats((n) => Math.max(0, n - 1));
+      // `sending` is preserved only for the photo flow; we never block on it here.
+      if (hardError) void 0;
     }
   }
+
 
   // --- Login screen ---
   if (!session) {
