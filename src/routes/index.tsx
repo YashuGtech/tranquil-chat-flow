@@ -504,7 +504,7 @@ function Index() {
     }
     const userMsg: Msg = { role: "user", content: input.trim(), t: Date.now() };
     // Snapshot the conversation that will be sent BEFORE clearing input,
-    // so concurrent sends don't race on a moving `messages` array.
+    // so the held request keeps the exact user message while it retries.
     const convoForApi = [...messages, userMsg]
       .slice(-30)
       .map(({ role, content }) => ({ role, content }));
