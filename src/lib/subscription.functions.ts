@@ -30,7 +30,7 @@ async function txnHashAlreadySubmitted(
   const { data, error } = await sb
     .from("subscription_requests")
     .select("id,txn_hash,status,telegram_username")
-    .ilike("txn_hash", normalizedHash)
+    .ilike("txn_hash", normalizedHash.replace(/[\\%_]/g, "\\$&"))
     .limit(25);
   if (error) {
     console.warn("[subscription] duplicate TXN lookup failed", error.message);
