@@ -757,7 +757,7 @@ export const Route = createFileRoute("/api/chat")({
                 { headers: { "content-type": "application/json" } },
               );
             }
-            const finalReply = busyNotice ? `${busyNotice}\n\n${reply}` : reply;
+            const finalReply = reply;
             return new Response(
               JSON.stringify({ reply: finalReply, quota }),
               { headers: { "content-type": "application/json" } },
@@ -766,15 +766,19 @@ export const Route = createFileRoute("/api/chat")({
           // attempt failed → loop to next candidate
         }
 
-        // Every candidate failed. Tell the user — politely.
-        console.error("[ai-pool] all candidates failed:", skippedReasons.join(" | "));
-        const friendly = creditsExhausted
-          ? "All AI providers are momentarily out of credit. Please try again shortly — the next free key will pick up automatically."
-          : "All AI providers are busy right now. Please try again in a moment.";
+        // Every candidate failed. DON'T scare the user — return a soft
+        // "retry" signal so the client keeps the thinking bubble visible
+        // and silently re-polls until a worker frees up.
+        console.warn("[ai-pool] all candidates busy, asking client to retry:", skippedReasons.join(" | "));
         return new Response(
-          JSON.stringify({ reply: friendly, busy: true }),
+          JSON.stringify({
+            retry: true,
+            retry_after_ms: 4000 + Math.floor(Math.random() * 3000),
+            // No user-facing error text — the UI keeps the typing indicator.
+          }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
+
 
       },
     },
