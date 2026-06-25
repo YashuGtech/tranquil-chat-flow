@@ -54,7 +54,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_reserve_subscription_txn_hash ON public.subscription_requests;
 CREATE TRIGGER trg_reserve_subscription_txn_hash
-BEFORE INSERT ON public.subscription_requests
+AFTER INSERT ON public.subscription_requests
 FOR EACH ROW EXECUTE FUNCTION public.reserve_subscription_txn_hash();
 
 -- 3) Optional direct UNIQUE index. It will be created only if no historical
