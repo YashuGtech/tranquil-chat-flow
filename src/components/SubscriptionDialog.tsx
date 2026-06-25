@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   PLANS,
@@ -12,19 +12,36 @@ interface Props {
   onSubmitted?: () => void;
 }
 
+function randomFee() {
+  return 1 + Math.floor(Math.random() * 10); // 1..10 GTC
+}
+
 export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
   const submitFn = useServerFn(submitSubscription);
   const addrFn = useServerFn(getDepositAddress);
   const [address, setAddress] = useState("0xe724D2800Cf0Af62aB7f3e08f2f6AD32900c1491");
   const [plan, setPlan] = useState<(typeof PLANS)[number] | null>(null);
+  const [feeGtc, setFeeGtc] = useState<number>(() => randomFee());
   const [txn, setTxn] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [confirmedFee, setConfirmedFee] = useState<number | null>(null);
+
+  // Recompute random fee whenever the user picks/changes a plan so the
+  // "Send exactly X GTC" amount is freshly randomised each attempt.
+  useEffect(() => {
+    if (plan) setFeeGtc(randomFee());
+  }, [plan]);
 
   useEffect(() => {
     addrFn().then((r) => r?.address && setAddress(r.address));
   }, []);
+
+  const totalToSend = useMemo(
+    () => (plan ? plan.gtc + feeGtc : 0),
+    [plan, feeGtc],
+  );
 
   async function submit() {
     if (!plan || !txn.trim()) return;
@@ -32,12 +49,18 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
     setErr(null);
     try {
       const r = await submitFn({
-        data: { sessionId, planGtc: plan.gtc, txnHash: txn.trim() },
+        data: {
+          sessionId,
+          planGtc: plan.gtc,
+          txnHash: txn.trim(),
+          feeGtc,
+        },
       });
       if (!r.ok) {
         setErr(r.error);
         return;
       }
+      setConfirmedFee(r.feeGtc ?? feeGtc);
       setDone(true);
       onSubmitted?.();
     } finally {
@@ -50,6 +73,21 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
       className="fixed inset-0 z-50 grid place-items-end sm:place-items-center bg-black/60 backdrop-blur-sm px-3 py-3 sm:p-6"
       onClick={() => !busy && onClose()}
     >
+      <style>{`
+        @keyframes sub-pop { 0%{transform:scale(.3);opacity:0} 60%{transform:scale(1.15);opacity:1} 100%{transform:scale(1)} }
+        @keyframes sub-ring { 0%{transform:scale(.4);opacity:.9} 100%{transform:scale(2.4);opacity:0} }
+        @keyframes sub-stroke { from{stroke-dashoffset:60} to{stroke-dashoffset:0} }
+        @keyframes sub-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+        @keyframes sub-fee-pulse { 0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(168,85,247,.35)} 50%{transform:scale(1.04);box-shadow:0 0 0 8px rgba(168,85,247,0)} }
+        @keyframes sub-spark { 0%{transform:scale(0) rotate(0);opacity:0} 50%{transform:scale(1) rotate(180deg);opacity:1} 100%{transform:scale(0) rotate(360deg);opacity:0} }
+        .sub-success-circle { animation: sub-pop .6s cubic-bezier(.22,1.4,.36,1) both; }
+        .sub-success-ring { animation: sub-ring 1.1s ease-out .15s both; }
+        .sub-success-check { stroke-dasharray:60; stroke-dashoffset:60; animation: sub-stroke .55s ease-out .35s forwards; }
+        .sub-success-float { animation: sub-float 2.6s ease-in-out infinite; }
+        .sub-fee-chip { animation: sub-fee-pulse 2.2s ease-in-out infinite; }
+        .sub-spark { animation: sub-spark 1.4s ease-out infinite; }
+      `}</style>
+
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md glass rounded-2xl p-5 shadow-2xl border border-border space-y-4"
@@ -72,16 +110,37 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
         </div>
 
         {done ? (
-          <div className="text-center py-6 space-y-2">
-            <div className="text-4xl">✅</div>
-            <p className="font-bold">Request submitted</p>
-            <p className="text-xs text-muted-foreground">
-              Admin will verify your TXN against the GTC deposit ledger. Once approved,
-              your messages will be credited automatically. Track status in <b>My Queries</b>.
+          <div className="text-center py-6 space-y-3">
+            <div className="relative mx-auto w-24 h-24 sub-success-float">
+              <span className="absolute inset-0 rounded-full sub-success-ring"
+                style={{ background: "radial-gradient(circle, rgba(99,102,241,.45), transparent 70%)" }} />
+              <div className="relative w-24 h-24 rounded-full sub-success-circle grid place-items-center"
+                style={{ background: "var(--gradient-blue, linear-gradient(135deg,#7c3aed,#3b82f6))", boxShadow: "0 14px 40px -8px rgba(99,102,241,.6)" }}>
+                <svg width="56" height="56" viewBox="0 0 56 56" fill="none" aria-hidden>
+                  <path className="sub-success-check"
+                    d="M14 29 L24 39 L43 18"
+                    stroke="white" strokeWidth="5"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <span className="sub-spark absolute -top-1 -right-2 text-yellow-300 text-xl">✦</span>
+              <span className="sub-spark absolute -bottom-1 -left-2 text-pink-300 text-lg" style={{ animationDelay: ".4s" }}>✦</span>
+              <span className="sub-spark absolute top-1 -left-3 text-blue-200 text-sm" style={{ animationDelay: ".8s" }}>✦</span>
+            </div>
+            <p className="font-black text-base">Request submitted</p>
+            <p className="text-xs text-muted-foreground px-2">
+              Admin will verify your TXN against the GTC deposit ledger. Once approved, your messages will be credited automatically. Track status in <b>My Queries</b>.
             </p>
+            {confirmedFee != null && (
+              <div className="inline-flex items-center gap-2 text-[11px] font-bold px-3 py-1.5 rounded-full bg-secondary/70 border border-border">
+                Network fee recorded:&nbsp;
+                <span className="blue-text">{confirmedFee} GTC</span>
+              </div>
+            )}
             <button
               onClick={onClose}
-              className="mt-3 px-4 py-2 rounded-lg bg-secondary text-sm font-bold"
+              className="mt-2 px-5 py-2 rounded-lg font-bold text-primary-foreground"
+              style={{ background: "var(--gradient-blue)", boxShadow: "var(--shadow-blue)" }}
             >
               Done
             </button>
@@ -119,7 +178,25 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
                 Send exactly
               </div>
               <div className="text-2xl font-black blue-text">
-                {plan.gtc.toLocaleString()} GTC
+                {totalToSend.toLocaleString()} GTC
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                Plan {plan.gtc.toLocaleString()} GTC + network fee
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <span className="sub-fee-chip inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full text-white"
+                  style={{ background: "linear-gradient(135deg,#a855f7,#6366f1)" }}>
+                  <span aria-hidden>⚡</span>
+                  Network fee: {feeGtc} GTC
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFeeGtc(randomFee())}
+                  className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                  title="Reroll random network fee"
+                >
+                  reroll
+                </button>
               </div>
               <div className="text-[10px] text-muted-foreground">
                 You'll receive <b>+{plan.messages}</b> messages
@@ -153,6 +230,9 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
                 autoCapitalize="none"
                 className="mt-1 w-full h-11 rounded-xl bg-input border border-border px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
               />
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Each TXN hash can only be submitted once.
+              </p>
             </div>
 
             {err && (
