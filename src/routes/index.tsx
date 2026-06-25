@@ -305,7 +305,7 @@ function Index() {
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, sending]);
+  }, [messages, sending, pendingChats]);
 
   useEffect(() => {
     const raw = localStorage.getItem("gtech-session");
