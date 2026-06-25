@@ -998,7 +998,7 @@ function Index() {
                 </div>
                 <button
                   type="submit"
-                  disabled={sending || (!pendingPhoto && !input.trim())}
+                  disabled={(sending && pendingPhoto != null) || (!pendingPhoto && !input.trim())}
                   className="h-12 w-12 grid place-items-center rounded-2xl bg-[#e4f9e6] border border-[#bff0c5] shadow-sm disabled:opacity-50 transition-transform active:scale-[.95] shrink-0 overflow-hidden"
                   aria-label="Send"
                   title="Send"
