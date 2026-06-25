@@ -795,10 +795,12 @@ function Index() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask me anything..."
+                disabled={sending || pendingChats > 0}
                 className="w-full h-14 rounded-full bg-input/60 border border-primary/30 pl-12 pr-16 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <button
                 type="submit"
+                disabled={sending || pendingChats > 0 || !input.trim()}
                 className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full grid place-items-center shadow-lg active:scale-95 transition-transform"
                 style={{ background: "var(--gradient-blue)", boxShadow: "var(--shadow-blue)" }}
                 aria-label="Send"
@@ -946,12 +948,7 @@ function Index() {
               {messages.map((m, i) => (
                 <MessageBubble key={i} m={m} />
               ))}
-              {(sending || pendingChats > 0) && (
-                <div className="flex items-end gap-2 animate-slide-in">
-                  <CoinImg />
-                  <div className="bubble-in rounded-2xl rounded-bl-sm shadow"><TypingDots /></div>
-                </div>
-              )}
+              {(sending || pendingChats > 0) && <AgentThinking />}
 
             </div>
           </div>
@@ -990,12 +987,14 @@ function Index() {
                     type="file"
                     accept="image/*"
                     onChange={pickPhoto}
+                    disabled={sending || pendingChats > 0}
                     className="hidden"
                   />
                 </label>
                 <button
                   type="button"
                   onClick={() => setShowTicket(true)}
+                  disabled={sending || pendingChats > 0}
                   className="h-12 w-12 grid place-items-center rounded-2xl bg-[#fff3db] border border-[#ffe3a8] shadow-sm shrink-0 active:scale-95 transition-transform overflow-hidden"
                   aria-label="Raise a ticket to admin"
                   title="Raise a ticket"
@@ -1007,6 +1006,7 @@ function Index() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
+                      if (sending || pendingChats > 0) return;
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         send();
@@ -1014,16 +1014,20 @@ function Index() {
                     }}
                     rows={1}
                     placeholder={
+                      sending || pendingChats > 0
+                        ? "Agent is thinking…"
+                        :
                       pendingPhoto
                         ? "Describe the issue (optional)…"
                         : "Ask about GTC, mining, presale, or your account…"
                     }
+                    disabled={sending || pendingChats > 0}
                     className="w-full resize-none max-h-32 min-h-[48px] rounded-2xl bg-input border border-border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
                 <button
                   type="submit"
-                  disabled={(sending && pendingPhoto != null) || (!pendingPhoto && !input.trim())}
+                  disabled={sending || pendingChats > 0 || (!pendingPhoto && !input.trim())}
                   className="h-12 w-12 grid place-items-center rounded-2xl bg-[#e4f9e6] border border-[#bff0c5] shadow-sm disabled:opacity-50 transition-transform active:scale-[.95] shrink-0 overflow-hidden"
                   aria-label="Send"
                   title="Send"
