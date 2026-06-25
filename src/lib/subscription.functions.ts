@@ -34,7 +34,7 @@ async function txnHashAlreadySubmitted(
     .limit(25);
   if (error) {
     console.warn("[subscription] duplicate TXN lookup failed", error.message);
-    return false;
+    throw new Error("Could not verify this TXN hash right now. Please try again in a moment.");
   }
   return ((data ?? []) as Array<{ id?: string; txn_hash?: string | null }>).some(
     (row) => row.id !== exceptId && normalizeTxnHash(row.txn_hash ?? "") === normalizedHash,
@@ -120,7 +120,13 @@ export const submitSubscription = createServerFn({ method: "POST" })
     // transaction.
     const txnHash = data.txnHash.trim();
     const normalizedHash = normalizeTxnHash(txnHash);
-    if (await txnHashAlreadySubmitted(sb, normalizedHash)) {
+    let duplicateHash = false;
+    try {
+      duplicateHash = await txnHashAlreadySubmitted(sb, normalizedHash);
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Could not verify this TXN hash." };
+    }
+    if (duplicateHash) {
       return {
         ok: false as const,
         error: DUPLICATE_TXN_ERROR,
@@ -241,7 +247,13 @@ export const adminApproveSubscription = createServerFn({ method: "POST" })
     }
 
     const reqHash = normalizeTxnHash(String(req.txn_hash ?? ""));
-    if (reqHash && (await txnHashAlreadySubmitted(sb, reqHash, data.id))) {
+    let duplicateHash = false;
+    try {
+      duplicateHash = !!reqHash && (await txnHashAlreadySubmitted(sb, reqHash, data.id));
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Could not verify this TXN hash." };
+    }
+    if (duplicateHash) {
       return {
         ok: false as const,
         error:
