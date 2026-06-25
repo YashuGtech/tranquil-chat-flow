@@ -23,6 +23,7 @@ create table if not exists public.subscription_requests (
   plan_gtc int not null,
   plan_messages int not null,
   txn_hash text not null,
+  fee_gtc int,
   status text not null default 'pending' check (status in ('pending','approved','rejected')),
   reject_reason text,
   decided_by text,
@@ -32,6 +33,39 @@ create table if not exists public.subscription_requests (
 create index if not exists idx_sub_req_status on public.subscription_requests(status, created_at desc);
 create index if not exists idx_sub_req_user   on public.subscription_requests(telegram_username, created_at desc);
 alter table public.subscription_requests disable row level security;
+
+-- Database-level TXN hash replay protection for new deposit requests.
+create table if not exists public.subscription_txn_hash_registry (
+  normalized_txn_hash text primary key,
+  subscription_request_id uuid references public.subscription_requests(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.subscription_txn_hash_registry disable row level security;
+
+create or replace function public.reserve_subscription_txn_hash()
+returns trigger
+language plpgsql
+as $$
+declare
+  normalized text;
+begin
+  normalized := lower(trim(NEW.txn_hash));
+  if normalized = '' then
+    raise exception 'Transaction hash is required';
+  end if;
+  insert into public.subscription_txn_hash_registry (normalized_txn_hash, subscription_request_id)
+  values (normalized, NEW.id);
+  return NEW;
+exception when unique_violation then
+  raise exception 'This transaction hash has already been submitted. Each on-chain TXN can only be used once.'
+    using errcode = '23505';
+end;
+$$;
+
+drop trigger if exists trg_reserve_subscription_txn_hash on public.subscription_requests;
+create trigger trg_reserve_subscription_txn_hash
+before insert on public.subscription_requests
+for each row execute function public.reserve_subscription_txn_hash();
 
 -- 3. AI API key pool (developer-managed, unlimited keys per provider)
 create table if not exists public.ai_api_keys (
