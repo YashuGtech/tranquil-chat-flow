@@ -225,19 +225,30 @@ async function maybeHandleFastPath(message: string | undefined, sessionId: strin
     }
   }
 
-  // Forex pair lookup → render TradingView live quote widget.
+  // Forex pair lookup → fetch live numeric rate + render TradingView quote.
   const forex = text.match(FOREX_PAIR_RE);
   if (forex && PRICE_QUERY_RE.test(text)) {
     const base = forex[1].toUpperCase();
     const quote = forex[2].toUpperCase();
     if (base !== quote) {
       const sym = tvSymbolForForex(`${base}${quote}`);
-      return [
-        `Live **${base}/${quote}** quote (TradingView):`,
-        `[[TV:${sym}]]`,
-      ].join("\n");
+      const live = await fetchForexRate(base, quote);
+      const header = live
+        ? [
+            `**${base}/${quote}** — live rate`,
+            `**1 ${base} = ${formatForexPrice(live.rate)} ${quote}**`,
+            live.changePct != null
+              ? `24h change: **${live.changePct >= 0 ? "+" : ""}${live.changePct.toFixed(2)}%**`
+              : null,
+            `_source: ${live.source} · ${new Date(live.fetchedAt).toLocaleTimeString()}_`,
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : `Live **${base}/${quote}** quote:`;
+      return [header, `[[TV:${sym}]]`, "Tap the chart for more detail."].join("\n");
     }
   }
+
 
   if (PRICE_QUERY_RE.test(text) || /\b(live|tradeview|tradingview|popup|chart|quote)\b/i.test(text)) {
     const coin = detectCoinFromText(text);
