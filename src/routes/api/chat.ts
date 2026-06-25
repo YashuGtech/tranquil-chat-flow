@@ -271,7 +271,81 @@ async function maybeHandleFastPath(message: string | undefined, sessionId: strin
   return null;
 }
 
+function formatForexPrice(n: number): string {
+  if (!isFinite(n)) return String(n);
+  if (n >= 100) return n.toFixed(2);
+  if (n >= 1) return n.toFixed(4);
+  return n.toPrecision(5);
+}
+
+async function fetchForexRate(
+  base: string,
+  quote: string,
+): Promise<{ rate: number; changePct: number | null; source: string; fetchedAt: string } | null> {
+  const fetchedAt = new Date().toISOString();
+  // 1) exchangerate.host (free, no key, current + yesterday for 24h change)
+  try {
+    const r = await fetch(
+      `https://api.exchangerate.host/latest?base=${base}&symbols=${quote}`,
+      { headers: { accept: "application/json" } },
+    );
+    if (r.ok) {
+      const j = (await r.json()) as { rates?: Record<string, number> };
+      const rate = j.rates?.[quote];
+      if (typeof rate === "number" && rate > 0) {
+        let changePct: number | null = null;
+        try {
+          const yest = new Date(Date.now() - 24 * 60 * 60 * 1000)
+            .toISOString()
+            .slice(0, 10);
+          const r2 = await fetch(
+            `https://api.exchangerate.host/${yest}?base=${base}&symbols=${quote}`,
+            { headers: { accept: "application/json" } },
+          );
+          if (r2.ok) {
+            const j2 = (await r2.json()) as { rates?: Record<string, number> };
+            const prev = j2.rates?.[quote];
+            if (typeof prev === "number" && prev > 0) {
+              changePct = ((rate - prev) / prev) * 100;
+            }
+          }
+        } catch {}
+        return { rate, changePct, source: "exchangerate.host (live)", fetchedAt };
+      }
+    }
+  } catch {}
+  // 2) Frankfurter fallback (ECB)
+  try {
+    const r = await fetch(
+      `https://api.frankfurter.app/latest?from=${base}&to=${quote}`,
+      { headers: { accept: "application/json" } },
+    );
+    if (r.ok) {
+      const j = (await r.json()) as { rates?: Record<string, number> };
+      const rate = j.rates?.[quote];
+      if (typeof rate === "number" && rate > 0) {
+        return { rate, changePct: null, source: "frankfurter.app (ECB)", fetchedAt };
+      }
+    }
+  } catch {}
+  // 3) open.er-api.com final fallback
+  try {
+    const r = await fetch(`https://open.er-api.com/v6/latest/${base}`, {
+      headers: { accept: "application/json" },
+    });
+    if (r.ok) {
+      const j = (await r.json()) as { rates?: Record<string, number> };
+      const rate = j.rates?.[quote];
+      if (typeof rate === "number" && rate > 0) {
+        return { rate, changePct: null, source: "open.er-api.com", fetchedAt };
+      }
+    }
+  } catch {}
+  return null;
+}
+
 async function fetchCryptoPrice(coin: string): Promise<string> {
+
   try {
     const id = resolveCoinId(coin);
     const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
