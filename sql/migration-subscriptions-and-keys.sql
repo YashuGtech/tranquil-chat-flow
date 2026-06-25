@@ -64,7 +64,7 @@ $$;
 
 drop trigger if exists trg_reserve_subscription_txn_hash on public.subscription_requests;
 create trigger trg_reserve_subscription_txn_hash
-before insert on public.subscription_requests
+after insert on public.subscription_requests
 for each row execute function public.reserve_subscription_txn_hash();
 
 -- 3. AI API key pool (developer-managed, unlimited keys per provider)
