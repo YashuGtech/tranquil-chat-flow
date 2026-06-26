@@ -1040,7 +1040,9 @@ function Index() {
               </div>
             </div>
           </form>
+          </div>
         </>
+
       )}
 
       {tab === "queries" && (
