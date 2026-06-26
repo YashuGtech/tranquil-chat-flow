@@ -54,8 +54,9 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-end sm:place-items-center bg-black/60 backdrop-blur-sm px-3 py-3 sm:p-6"
+      className="fixed inset-0 z-50 grid place-items-end sm:place-items-center bg-black/60 backdrop-blur-sm px-3 py-3 sm:p-6 overflow-y-auto"
       onClick={() => !busy && onClose()}
+      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
     >
       <style>{`
         @keyframes sub-pop { 0%{transform:scale(.3);opacity:0} 60%{transform:scale(1.15);opacity:1} 100%{transform:scale(1)} }
@@ -72,7 +73,7 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
 
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md glass rounded-2xl p-5 shadow-2xl border border-border space-y-4"
+        className="w-full max-w-md glass rounded-2xl p-5 shadow-2xl border border-border space-y-4 my-auto max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
         style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
       >
         <div className="flex items-start justify-between gap-3">
@@ -189,6 +190,14 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
                 onChange={(e) => {
                   setTxn(e.target.value);
                   if (err) setErr(null);
+                }}
+                onFocus={(e) => {
+                  const el = e.currentTarget;
+                  // Wait for the on-screen keyboard to settle, then bring
+                  // the input into view above it so users can paste their hash.
+                  setTimeout(() => {
+                    el.scrollIntoView({ block: "center", behavior: "smooth" });
+                  }, 300);
                 }}
                 placeholder="0x…"
                 autoCapitalize="none"

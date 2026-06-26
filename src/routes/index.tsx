@@ -953,13 +953,16 @@ function Index() {
             </div>
           </div>
 
-          <div className="glass border-t border-border">
-            <QuotaBar quota={quota} onSubscribe={() => setShowSubscribe(true)} />
-          </div>
+          <div
+            className="sticky bottom-0 z-20 glass border-t border-border"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
+            <div className="border-b border-border/60">
+              <QuotaBar quota={quota} onSubscribe={() => setShowSubscribe(true)} />
+            </div>
           <form
             onSubmit={(e) => { e.preventDefault(); send(); }}
-            className="glass sticky bottom-0 px-3 sm:px-5 py-3 border-t border-border"
-            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+            className="px-3 sm:px-5 py-3"
           >
 
             <div className="max-w-3xl mx-auto">
@@ -1037,7 +1040,9 @@ function Index() {
               </div>
             </div>
           </form>
+          </div>
         </>
+
       )}
 
       {tab === "queries" && (
