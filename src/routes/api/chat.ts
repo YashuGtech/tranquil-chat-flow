@@ -7,6 +7,8 @@ import { userDb, ADMIN_USERNAMES } from "@/config/user-db";
 import { consumeQuota, getQuota, LIMIT_REACHED_MESSAGE } from "@/lib/quota.server";
 import { pickAvailableKey, recordUsage, recordEnvUsage } from "@/lib/ai-keys.server";
 import { buildAiCandidatePool } from "@/lib/ai-pool";
+import { recordChatReceived, recordChatResponded } from "@/lib/chat-metrics.server";
+
 
 
 
