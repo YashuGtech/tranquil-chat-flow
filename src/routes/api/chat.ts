@@ -7,6 +7,8 @@ import { userDb, ADMIN_USERNAMES } from "@/config/user-db";
 import { consumeQuota, getQuota, LIMIT_REACHED_MESSAGE } from "@/lib/quota.server";
 import { pickAvailableKey, recordUsage, recordEnvUsage } from "@/lib/ai-keys.server";
 import { buildAiCandidatePool } from "@/lib/ai-pool";
+import { recordChatReceived, recordChatResponded } from "@/lib/chat-metrics.server";
+
 
 
 
@@ -537,6 +539,8 @@ export const Route = createFileRoute("/api/chat")({
             { status: 400, headers: { "content-type": "application/json" } },
           );
         }
+        recordChatReceived();
+
 
         const session = await getSession(parsed.sessionId);
         const verified = !!session?.verified;
@@ -565,11 +569,13 @@ export const Route = createFileRoute("/api/chat")({
             const c = await consumeQuota(username);
             quota = c.snapshot;
           }
+          recordChatResponded();
           return new Response(
             JSON.stringify({ reply: fastPathReply, quota }),
             { headers: { "content-type": "application/json" } },
           );
         }
+
 
         // -- Build the ordered AI candidate pool ---------------------------
         // Order: DB-managed pool (Developer panel keys) → env Gemma keys
@@ -743,6 +749,7 @@ export const Route = createFileRoute("/api/chat")({
               quota = c.snapshot;
             }
             if (!reply) {
+              recordChatResponded();
               return new Response(
                 JSON.stringify({
                   reply:
@@ -750,13 +757,16 @@ export const Route = createFileRoute("/api/chat")({
                   quota,
                 }),
                 { headers: { "content-type": "application/json" } },
+
               );
             }
             const finalReply = reply;
+            recordChatResponded();
             return new Response(
               JSON.stringify({ reply: finalReply, quota }),
               { headers: { "content-type": "application/json" } },
             );
+
           }
           // attempt failed → loop to next candidate
         }

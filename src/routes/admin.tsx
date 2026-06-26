@@ -18,6 +18,7 @@ import { QueryStatCard, QuerySection, QueryItem } from "@/components/admin/Queri
 import { SubscriptionsUI } from "@/components/admin/SubscriptionsUI";
 import { AIKeysUI } from "@/components/admin/AIKeysUI";
 import { TestingUI } from "@/components/admin/TestingUI";
+import { ChatMetricsUI } from "@/components/admin/ChatMetricsUI";
 
 import {
   Table,
@@ -309,12 +310,14 @@ function Admin() {
             <TabsTrigger value="queries" className="flex-1">
               Queries ({pending.length + reopened.length} open)
             </TabsTrigger>
+            <TabsTrigger value="metrics" className="flex-1">Metrics</TabsTrigger>
             <TabsTrigger value="subscriptions" className="flex-1">Subscriptions</TabsTrigger>
             <TabsTrigger value="aikeys" className="flex-1">AI Keys</TabsTrigger>
             <TabsTrigger value="testing" className="flex-1">Testing</TabsTrigger>
             <TabsTrigger value="lookup" className="flex-1">User Lookup</TabsTrigger>
             <TabsTrigger value="settings" className="flex-1">API Settings</TabsTrigger>
           </TabsList>
+
 
 
           {/* QUERIES TAB */}
@@ -483,10 +486,16 @@ function Admin() {
             })()}
           </TabsContent>
 
+          {/* METRICS TAB */}
+          <TabsContent value="metrics">
+            <ChatMetricsUI sessionId={s.id} />
+          </TabsContent>
+
           {/* SUBSCRIPTIONS TAB */}
           <TabsContent value="subscriptions">
             <SubscriptionsUI sessionId={s.id} />
           </TabsContent>
+
 
           {/* AI KEYS TAB */}
           <TabsContent value="aikeys">
