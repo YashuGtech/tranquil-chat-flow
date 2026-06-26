@@ -135,14 +135,7 @@ export const submitSubscription = createServerFn({ method: "POST" })
           "You already have a deposit request pending review. Please wait until it is approved or rejected before submitting another.",
       };
     }
-    // Random 1-10 GTC network fee, recorded with every deposit so admins
-    // can reconcile the on-chain amount. Fall back to a fresh random if
-    // the client did not pre-display one.
-    const feeGtc =
-      typeof data.feeGtc === "number"
-        ? Math.max(1, Math.min(10, Math.round(data.feeGtc)))
-        : 1 + Math.floor(Math.random() * 10);
-
+    // No deposit fee — users send the exact plan amount.
     const { data: row, error } = await sb
       .from("subscription_requests")
       .insert({
@@ -151,10 +144,10 @@ export const submitSubscription = createServerFn({ method: "POST" })
         plan_gtc: plan.gtc,
         plan_messages: plan.messages,
         txn_hash: txnHash,
-        fee_gtc: feeGtc,
+        fee_gtc: 0,
         status: "pending",
       })
-      .select("id,fee_gtc")
+      .select("id")
       .single();
     if (error) {
       // Race-safe fallback: if a parallel insert created the same hash
@@ -170,9 +163,9 @@ export const submitSubscription = createServerFn({ method: "POST" })
     return {
       ok: true as const,
       id: row.id as string,
-      feeGtc: (row.fee_gtc as number) ?? feeGtc,
     };
   });
+
 
 
 /** User: list their own subscription history. */
