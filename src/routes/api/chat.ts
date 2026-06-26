@@ -749,6 +749,7 @@ export const Route = createFileRoute("/api/chat")({
               quota = c.snapshot;
             }
             if (!reply) {
+              recordChatResponded();
               return new Response(
                 JSON.stringify({
                   reply:
@@ -756,6 +757,7 @@ export const Route = createFileRoute("/api/chat")({
                   quota,
                 }),
                 { headers: { "content-type": "application/json" } },
+
               );
             }
             const finalReply = reply;
