@@ -73,7 +73,7 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
 
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md glass rounded-2xl p-5 shadow-2xl border border-border space-y-4"
+        className="w-full max-w-md glass rounded-2xl p-5 shadow-2xl border border-border space-y-4 my-auto max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
         style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
       >
         <div className="flex items-start justify-between gap-3">
