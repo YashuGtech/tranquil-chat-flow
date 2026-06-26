@@ -191,6 +191,14 @@ export function SubscriptionDialog({ sessionId, onClose, onSubmitted }: Props) {
                   setTxn(e.target.value);
                   if (err) setErr(null);
                 }}
+                onFocus={(e) => {
+                  const el = e.currentTarget;
+                  // Wait for the on-screen keyboard to settle, then bring
+                  // the input into view above it so users can paste their hash.
+                  setTimeout(() => {
+                    el.scrollIntoView({ block: "center", behavior: "smooth" });
+                  }, 300);
+                }}
                 placeholder="0x…"
                 autoCapitalize="none"
                 autoComplete="off"
