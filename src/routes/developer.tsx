@@ -6,9 +6,11 @@ import {
   devAddKey,
   devToggleKey,
   devDeleteKey,
+  devTestKey,
 } from "@/lib/keys.functions";
 import { requestOtp, verifyOtp } from "@/lib/bot.functions";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/developer")({
   head: () => ({
