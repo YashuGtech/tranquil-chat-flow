@@ -5,6 +5,8 @@ import { z } from "zod";
 import { getUserSupabase } from "@/lib/user-supabase.server";
 import { isTrainer, isAdmin } from "@/config/user-db";
 import { listKeysWithStats } from "@/lib/ai-keys.server";
+import { buildAiCandidatePool } from "@/lib/ai-pool";
+
 
 async function getSession(sessionId: string) {
   const sb = getUserSupabase();
