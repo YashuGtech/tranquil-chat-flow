@@ -251,8 +251,12 @@ function DeveloperPage() {
 
   if (!s) return <Gate onAuth={setS} />;
 
-  const gemini = rows.filter((r) => r.provider === "gemini");
+  const gemini = rows.filter(
+    (r) => r.provider === "gemini" || r.provider === "gemma",
+  );
   const nvidia = rows.filter((r) => r.provider === "nvidia");
+  const lovable = rows.filter((r) => r.provider === "lovable");
+
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
