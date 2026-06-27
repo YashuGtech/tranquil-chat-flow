@@ -148,12 +148,24 @@
     border-color: var(--color-border);
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     background: var(--gradient-bg);
     background-color: var(--color-background);
     color: var(--color-foreground);
     min-height: 100vh;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent iOS Safari auto-zoom on focus: inputs must be >= 16px */
+  @supports (-webkit-touch-callout: none) {
+    input, textarea, select {
+      font-size: 16px !important;
+    }
   }
 }
 
