@@ -30,14 +30,26 @@ interface Session {
 
 interface KeyStat {
   id: string;
-  provider: "gemini" | "nvidia";
+  provider: string;
   label: string;
   model: string;
   rpm_limit: number;
   active: boolean;
+  source?: "db" | "env";
   lastMinute: number;
   lastHour: number;
   today: number;
+}
+
+interface TestResult {
+  label: string;
+  endpoint: string;
+  model: string;
+  status: number;
+  ms: number;
+  reply: string;
+  bodyPreview: string;
+  networkError: string | null;
 }
 
 function Gate({ onAuth }: { onAuth: (s: Session) => void }) {
