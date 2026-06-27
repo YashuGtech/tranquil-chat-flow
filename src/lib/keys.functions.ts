@@ -5,6 +5,8 @@ import { z } from "zod";
 import { getUserSupabase } from "@/lib/user-supabase.server";
 import { isTrainer, isAdmin } from "@/config/user-db";
 import { listKeysWithStats } from "@/lib/ai-keys.server";
+import { buildAiCandidatePool } from "@/lib/ai-pool";
+
 
 async function getSession(sessionId: string) {
   const sb = getUserSupabase();
@@ -127,3 +129,104 @@ export const devDeleteKey = createServerFn({ method: "POST" })
     await sb.from("ai_api_keys").delete().eq("id", data.id);
     return { ok: true as const };
   });
+
+/**
+ * Developer: send a one-shot test prompt to a specific API key (DB or env)
+ * and return the raw upstream response. Used to verify a key works and to
+ * debug why a particular model (e.g. Gemma) isn't responding.
+ */
+export const devTestKey = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        sessionId: z.string().uuid(),
+        // DB key uuid OR an env-pool id like "env:Gemma #1"
+        keyId: z.string().min(1).max(200),
+        prompt: z.string().min(1).max(2000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const s = await requireDeveloper(data.sessionId);
+    if (!s) return { ok: false as const, error: "Developer only" };
+
+    let apiKey = "";
+    let endpoint = "";
+    let model = "";
+    let label = "";
+    let supportsTools = true;
+
+    if (data.keyId.startsWith("env:")) {
+      const wanted = data.keyId.slice(4);
+      const cand = buildAiCandidatePool().find((c) => c.label === wanted);
+      if (!cand) return { ok: false as const, error: "Env key not found" };
+      apiKey = cand.apiKey;
+      endpoint = cand.endpoint;
+      model = cand.model;
+      label = cand.label;
+      supportsTools = cand.supportsTools;
+    } else {
+      const sb = getUserSupabase();
+      const { data: row } = await sb
+        .from("ai_api_keys")
+        .select("*")
+        .eq("id", data.keyId)
+        .single();
+      if (!row) return { ok: false as const, error: "Key not found" };
+      apiKey = row.api_key;
+      endpoint =
+        row.provider === "gemini"
+          ? "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+          : "https://integrate.api.nvidia.com/v1/chat/completions";
+      model =
+        row.model ||
+        (row.provider === "gemini" ? "gemma-3-27b-it" : "nvidia/nemotron-nano-3-8b-v1");
+      label = row.label;
+      supportsTools = !/^gemma/i.test(model);
+    }
+
+    const started = Date.now();
+    let status = 0;
+    let bodyText = "";
+    let reply = "";
+    let networkError: string | null = null;
+    try {
+      const resp = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: data.prompt }],
+          stream: false,
+          max_tokens: 1024,
+          temperature: 0.7,
+        }),
+      });
+      status = resp.status;
+      bodyText = await resp.text();
+      try {
+        const j = JSON.parse(bodyText);
+        reply = j?.choices?.[0]?.message?.content ?? "";
+      } catch {}
+    } catch (e) {
+      networkError = e instanceof Error ? e.message : String(e);
+    }
+    const ms = Date.now() - started;
+
+    return {
+      ok: true as const,
+      label,
+      endpoint,
+      model,
+      supportsTools,
+      status,
+      ms,
+      reply,
+      bodyPreview: bodyText.slice(0, 4000),
+      networkError,
+    };
+  });
+

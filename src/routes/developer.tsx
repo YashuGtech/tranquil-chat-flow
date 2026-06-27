@@ -6,9 +6,11 @@ import {
   devAddKey,
   devToggleKey,
   devDeleteKey,
+  devTestKey,
 } from "@/lib/keys.functions";
 import { requestOtp, verifyOtp } from "@/lib/bot.functions";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/developer")({
   head: () => ({
@@ -28,14 +30,26 @@ interface Session {
 
 interface KeyStat {
   id: string;
-  provider: "gemini" | "nvidia";
+  provider: string;
   label: string;
   model: string;
   rpm_limit: number;
   active: boolean;
+  source?: "db" | "env";
   lastMinute: number;
   lastHour: number;
   today: number;
+}
+
+interface TestResult {
+  label: string;
+  endpoint: string;
+  model: string;
+  status: number;
+  ms: number;
+  reply: string;
+  bodyPreview: string;
+  networkError: string | null;
 }
 
 function Gate({ onAuth }: { onAuth: (s: Session) => void }) {
@@ -135,10 +149,47 @@ function DeveloperPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // Per-key tester state
+  const [testOpenId, setTestOpenId] = useState<string | null>(null);
+  const [testPrompt, setTestPrompt] = useState("Reply with 'pong' only.");
+  const [testBusyId, setTestBusyId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+
   const listFn = useServerFn(devListKeys);
   const addFn = useServerFn(devAddKey);
   const toggleFn = useServerFn(devToggleKey);
   const delFn = useServerFn(devDeleteKey);
+  const testFn = useServerFn(devTestKey);
+
+  async function runTest(keyId: string) {
+    if (!s || !testPrompt.trim()) return;
+    setTestBusyId(keyId);
+    try {
+      const r = await testFn({
+        data: { sessionId: s.id, keyId, prompt: testPrompt.trim() },
+      });
+      if (r.ok) {
+        setTestResults((prev) => ({ ...prev, [keyId]: r as TestResult }));
+      } else {
+        setTestResults((prev) => ({
+          ...prev,
+          [keyId]: {
+            label: "",
+            endpoint: "",
+            model: "",
+            status: 0,
+            ms: 0,
+            reply: "",
+            bodyPreview: "",
+            networkError: r.error,
+          },
+        }));
+      }
+    } finally {
+      setTestBusyId(null);
+    }
+  }
+
 
   async function load() {
     if (!s) return;
@@ -200,8 +251,12 @@ function DeveloperPage() {
 
   if (!s) return <Gate onAuth={setS} />;
 
-  const gemini = rows.filter((r) => r.provider === "gemini");
+  const gemini = rows.filter(
+    (r) => r.provider === "gemini" || r.provider === "gemma",
+  );
   const nvidia = rows.filter((r) => r.provider === "nvidia");
+  const lovable = rows.filter((r) => r.provider === "lovable");
+
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
@@ -320,6 +375,7 @@ function DeveloperPage() {
         {([
           ["Gemini / Gemma keys", gemini],
           ["NVIDIA Nemotron keys", nvidia],
+          ["Lovable AI Gateway", lovable],
         ] as const).map(([title, list]) => (
           <section key={title} className="mb-6">
             <div className="flex items-center justify-between mb-3">
@@ -339,45 +395,150 @@ function DeveloperPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {list.map((k) => (
-                  <div
-                    key={k.id}
-                    className="glass rounded-xl p-3 border border-border flex items-center gap-3 flex-wrap"
-                  >
-                    <div className="flex-1 min-w-[200px]">
-                      <div className="font-bold text-sm">{k.label}</div>
-                      <div className="text-[11px] text-muted-foreground font-mono">
-                        {k.model} · limit {k.rpm_limit} rpm
+                {list.map((k) => {
+                  const isEnv = k.source === "env";
+                  const open = testOpenId === k.id;
+                  const result = testResults[k.id];
+                  return (
+                    <div
+                      key={k.id}
+                      className="glass rounded-xl p-3 border border-border space-y-3"
+                    >
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex-1 min-w-[200px]">
+                          <div className="font-bold text-sm flex items-center gap-2">
+                            {k.label}
+                            <span
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                                isEnv
+                                  ? "bg-sky-500/15 text-sky-600"
+                                  : "bg-violet-500/15 text-violet-600"
+                              }`}
+                            >
+                              {isEnv ? "ENV" : "DB"}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground font-mono">
+                            {k.model} · limit {k.rpm_limit} rpm
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-[11px] font-mono">
+                          <Stat label="last min" value={k.lastMinute} max={k.rpm_limit} />
+                          <Stat label="last hr" value={k.lastHour} />
+                          <Stat label="today" value={k.today} />
+                        </div>
+                        <button
+                          onClick={() => setTestOpenId(open ? null : k.id)}
+                          className="text-[11px] px-2 py-1 rounded bg-primary/15 text-primary font-bold"
+                        >
+                          {open ? "Close" : "Test"}
+                        </button>
+                        {!isEnv && (
+                          <>
+                            <button
+                              onClick={() => toggle(k.id, !k.active)}
+                              className={`text-[11px] px-2 py-1 rounded font-bold ${
+                                k.active
+                                  ? "bg-emerald-500/15 text-emerald-600"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {k.active ? "Active" : "Disabled"}
+                            </button>
+                            <button
+                              onClick={() => remove(k.id)}
+                              className="text-[11px] px-2 py-1 rounded bg-destructive/15 text-destructive font-bold"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                        {isEnv && (
+                          <span className="text-[10px] px-2 py-1 rounded font-bold bg-emerald-500/15 text-emerald-600">
+                            Active
+                          </span>
+                        )}
                       </div>
+
+                      {open && (
+                        <div className="border-t border-border pt-3 space-y-2">
+                          <label className="text-[11px] font-bold text-muted-foreground">
+                            Test prompt
+                          </label>
+                          <Textarea
+                            value={testPrompt}
+                            onChange={(e) => setTestPrompt(e.target.value)}
+                            rows={2}
+                            className="text-sm"
+                          />
+                          <div className="flex justify-end">
+                            <Button
+                              size="sm"
+                              onClick={() => runTest(k.id)}
+                              disabled={testBusyId === k.id || !testPrompt.trim()}
+                            >
+                              {testBusyId === k.id ? "Sending…" : "Send to this key"}
+                            </Button>
+                          </div>
+                          {result && (
+                            <div className="rounded-md border border-border bg-background/50 p-3 space-y-2 text-xs">
+                              <div className="flex flex-wrap gap-3 font-mono">
+                                <span
+                                  className={`px-2 py-0.5 rounded font-bold ${
+                                    result.networkError
+                                      ? "bg-destructive/15 text-destructive"
+                                      : result.status >= 200 && result.status < 300
+                                      ? "bg-emerald-500/15 text-emerald-600"
+                                      : "bg-amber-500/15 text-amber-600"
+                                  }`}
+                                >
+                                  {result.networkError
+                                    ? "NETWORK ERROR"
+                                    : `HTTP ${result.status}`}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {result.ms} ms
+                                </span>
+                                <span className="text-muted-foreground truncate">
+                                  {result.model}
+                                </span>
+                              </div>
+                              {result.networkError && (
+                                <pre className="whitespace-pre-wrap text-destructive font-mono text-[11px]">
+                                  {result.networkError}
+                                </pre>
+                              )}
+                              {result.reply && (
+                                <div>
+                                  <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">
+                                    Reply
+                                  </div>
+                                  <pre className="whitespace-pre-wrap font-sans">
+                                    {result.reply}
+                                  </pre>
+                                </div>
+                              )}
+                              <details className="text-[11px]">
+                                <summary className="cursor-pointer text-muted-foreground">
+                                  Raw response
+                                </summary>
+                                <pre className="whitespace-pre-wrap font-mono mt-1 max-h-64 overflow-auto">
+                                  {result.bodyPreview || "(empty)"}
+                                </pre>
+                              </details>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-4 text-[11px] font-mono">
-                      <Stat label="last min" value={k.lastMinute} max={k.rpm_limit} />
-                      <Stat label="last hr" value={k.lastHour} />
-                      <Stat label="today" value={k.today} />
-                    </div>
-                    <button
-                      onClick={() => toggle(k.id, !k.active)}
-                      className={`text-[11px] px-2 py-1 rounded font-bold ${
-                        k.active
-                          ? "bg-emerald-500/15 text-emerald-600"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {k.active ? "Active" : "Disabled"}
-                    </button>
-                    <button
-                      onClick={() => remove(k.id)}
-                      className="text-[11px] px-2 py-1 rounded bg-destructive/15 text-destructive font-bold"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
         ))}
       </div>
+
     </div>
   );
 }
