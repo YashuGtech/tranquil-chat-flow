@@ -149,10 +149,47 @@ function DeveloperPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // Per-key tester state
+  const [testOpenId, setTestOpenId] = useState<string | null>(null);
+  const [testPrompt, setTestPrompt] = useState("Reply with 'pong' only.");
+  const [testBusyId, setTestBusyId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+
   const listFn = useServerFn(devListKeys);
   const addFn = useServerFn(devAddKey);
   const toggleFn = useServerFn(devToggleKey);
   const delFn = useServerFn(devDeleteKey);
+  const testFn = useServerFn(devTestKey);
+
+  async function runTest(keyId: string) {
+    if (!s || !testPrompt.trim()) return;
+    setTestBusyId(keyId);
+    try {
+      const r = await testFn({
+        data: { sessionId: s.id, keyId, prompt: testPrompt.trim() },
+      });
+      if (r.ok) {
+        setTestResults((prev) => ({ ...prev, [keyId]: r as TestResult }));
+      } else {
+        setTestResults((prev) => ({
+          ...prev,
+          [keyId]: {
+            label: "",
+            endpoint: "",
+            model: "",
+            status: 0,
+            ms: 0,
+            reply: "",
+            bodyPreview: "",
+            networkError: r.error,
+          },
+        }));
+      }
+    } finally {
+      setTestBusyId(null);
+    }
+  }
+
 
   async function load() {
     if (!s) return;
